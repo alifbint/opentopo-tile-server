@@ -17,12 +17,9 @@ RUN apt-get update \
 
 FROM compiler-common AS compiler-stylesheet
 RUN cd ~ \
-&& git clone --single-branch --branch v5.4.0 https://github.com/gravitystorm/openstreetmap-carto.git --depth 1 \
-&& cd openstreetmap-carto \
-&& sed -i 's/, "unifont Medium", "Unifont Upper Medium"//g' style/fonts.mss \
-&& sed -i 's/"Noto Sans Tibetan Regular",//g' style/fonts.mss \
-&& sed -i 's/"Noto Sans Tibetan Bold",//g' style/fonts.mss \
-&& sed -i 's/Noto Sans Syriac Eastern Regular/Noto Sans Syriac Regular/g' style/fonts.mss \
+&& git clone https://github.com/der-stefan/OpenTopoMap.git opentopomap \
+&& cd  opentopomap \
+&& mkdir -p mapnik\data \
 && rm -rf .git
 
 ###########################################################################################################
@@ -51,38 +48,19 @@ ENV PG_VERSION 15
 RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 
 # Get packages
-RUN apt-get update \
-&& apt-get install -y --no-install-recommends \
- apache2 \
- cron \
- dateutils \
- fonts-hanazono \
- fonts-noto-cjk \
- fonts-noto-hinted \
- fonts-noto-unhinted \
- fonts-unifont \
- gnupg2 \
- gdal-bin \
- liblua5.3-dev \
- lua5.3 \
- mapnik-utils \
- npm \
- osm2pgsql \
- osmium-tool \
- osmosis \
- postgresql-$PG_VERSION \
- postgresql-$PG_VERSION-postgis-3 \
- postgresql-$PG_VERSION-postgis-3-scripts \
- postgis \
- python-is-python3 \
- python3-mapnik \
- python3-lxml \
- python3-psycopg2 \
- python3-shapely \
- python3-pip \
- renderd \
- sudo \
- vim \
+RUN apt-get update && apt-get install -y --no-install-recommends \
+  libboost-all-dev git-core tar unzip wget bzip2 build-essential autoconf \
+  libtool libxml2-dev libgeos-dev libgeos++-dev libpq-dev libbz2-dev libproj-dev munin-node munin \
+  protobuf-c-compiler libfreetype6-dev libtiff5-dev libicu-dev \
+  libgdal-dev libcairo-dev libcairomm-1.0-dev apache2 apache2-dev libagg-dev liblua5.2-dev \
+  lua5.1 liblua5.1-dev cmake lua5.3 liblua5.3-dev devscripts \
+  libjson-perl libipc-sharelite-perl libgd-perl debhelper cron \
+  dateutils fonts-hanazono fonts-noto-cjk fonts-noto-hinted \
+  fonts-noto-unhinted fonts-unifont gnupg2 gdal-bin \
+  mapnik-utils osm2pgsql osmium-tool osmosis \
+  postgresql-$PG_VERSION postgresql-$PG_VERSION-postgis-3 postgresql-$PG_VERSION-postgis-3-scripts \
+  postgis python-is-python3 python3-mapnik python3-lxml python3-psycopg2 python3-shapely \
+  python3-pip renderd sudo vim \
 && apt-get clean autoclean \
 && apt-get autoremove --yes \
 && rm -rf /var/lib/{apt,dpkg,cache,log}/
@@ -100,9 +78,6 @@ RUN pip3 install \
  requests \
  osmium \
  pyyaml
-
-# Install carto for stylesheet
-RUN npm install -g carto@1.2.0
 
 # Configure Apache
 RUN echo "LoadModule tile_module /usr/lib/apache2/modules/mod_tile.so" >> /etc/apache2/conf-available/mod_tile.conf \
@@ -137,10 +112,14 @@ RUN chown -R postgres:postgres /var/lib/postgresql \
 && echo "host all all 0.0.0.0/0 scram-sha-256" >> /etc/postgresql/$PG_VERSION/main/pg_hba.conf \
 && echo "host all all ::/0 scram-sha-256" >> /etc/postgresql/$PG_VERSION/main/pg_hba.conf
 
+COPY --from=compiler-stylesheet /root/opentopomap /home/renderer/src/opentopomap
+
 # Create volume directories
 RUN mkdir -p /run/renderd/ \
   &&  mkdir  -p  /data/database/  \
   &&  mkdir  -p  /data/style/  \
+  &&  mkdir  -p  /data/water-polygon \
+  &&  mkdir  -p  /data/srtm \
   &&  mkdir  -p  /home/renderer/src/  \
   &&  chown  -R  renderer:  /data/  \
   &&  chown  -R  renderer:  /home/renderer/src/  \
@@ -149,14 +128,15 @@ RUN mkdir -p /run/renderd/ \
   &&  mv  /var/cache/renderd/tiles/            /data/tiles/     \
   &&  chown  -R  renderer: /data/tiles \
   &&  ln  -s  /data/database/postgres  /var/lib/postgresql/$PG_VERSION/main             \
-  &&  ln  -s  /data/style              /home/renderer/src/openstreetmap-carto  \
+  &&  ln  -s  /data/style              /home/renderer/src/opentopomap/mapnik  \
+  &&  ln  -s  /data/water-polygon      /home/renderer/src/opentopomap/mapnik/data  \
   &&  ln  -s  /data/tiles              /var/cache/renderd/tiles                \
 ;
 
 RUN echo '[default] \n\
 URI=/tile/ \n\
 TILEDIR=/var/cache/renderd/tiles \n\
-XML=/home/renderer/src/openstreetmap-carto/mapnik.xml \n\
+XML=/home/renderer/src/opentopomap/mapnik/opentopomap.xml \n\
 HOST=localhost \n\
 TILESIZE=256 \n\
 MAXZOOM=20' >> /etc/renderd.conf \
@@ -164,8 +144,6 @@ MAXZOOM=20' >> /etc/renderd.conf \
 
 # Install helper script
 COPY --from=compiler-helper-script /home/renderer/src/regional /home/renderer/src/regional
-
-COPY --from=compiler-stylesheet /root/openstreetmap-carto /home/renderer/src/openstreetmap-carto-backup
 
 # Start running
 COPY run.sh /

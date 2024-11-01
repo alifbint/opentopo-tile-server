@@ -30,15 +30,15 @@ fi
 set -x
 
 # if there is no custom style mounted, then use osm-carto
-if [ ! "$(ls -A /data/style/)" ]; then
-    mv /home/renderer/src/openstreetmap-carto-backup/* /data/style/
-fi
+# if [ ! "$(ls -A /data/style/)" ]; then
+#     mv /home/renderer/src/openstreetmap-carto-backup/* /data/style/
+# fi
 
 # carto build
-if [ ! -f /data/style/mapnik.xml ]; then
-    cd /data/style/
-    carto ${NAME_MML:-project.mml} > mapnik.xml
-fi
+# if [ ! -f /data/style/mapnik.xml ]; then
+#     cd /data/style/
+#     carto ${NAME_MML:-project.mml} > mapnik.xml
+# fi
 
 if [ "$1" == "import" ]; then
     # Ensure that database directory is in right state
@@ -127,6 +127,64 @@ if [ "$1" == "import" ]; then
     service postgresql stop
 
     exit 0
+fi
+
+if [ "$1" == "build-topo" ]; then
+    # Downloading water polygons
+    wget -o /data/water-polygon/simplified-water-polygons-split-3857.zip https://osmdata.openstreetmap.de/download/simplified-water-polygons-split-3857.zip
+    wget -o /data/water-polygon/water-polygons-split-3857.zip https://osmdata.openstreetmap.de/download/water-polygons-split-3857.zip
+    unzip /data/water-polygon/water-polygons-split-3857.zip -d /data/water-polygon
+    unzip /data/water-polygon/simplified-water-polygons-split-3857.zip -d /data/water-polygon
+    rm /data/water-polygon/simplified-water-polygons-split-3857.zip
+
+    # Download DEM File
+    cd /data/srtm
+    wget -i srtm.list
+    for zipfile in *.zip;do unzip -j -o "$zipfile" -d unpacked; done
+
+    # Extract SRTM
+    cd /data/srtm/unpacked
+    for hgtfile in *.hgt;do gdal_fillnodata.py $hgtfile $hgtfile.tif; done
+    mkdir /data/srtm/data
+    gdal_merge.py -n 32767 -co BIGTIFF=YES -co TILED=YES -co COMPRESS=LZW -co PREDICTOR=2 -o /data/srtm/data/raw.tif *.hgt.tif
+
+    cd /data/srtm/data
+    gdalwarp -co BIGTIFF=YES -co TILED=YES -co COMPRESS=LZW -co PREDICTOR=2 -t_srs "+proj=merc +ellps=sphere +R=6378137 +a=6378137 +units=m" -r bilinear -tr 1000 1000 raw.tif warp-1000.tif
+    gdalwarp -co BIGTIFF=YES -co TILED=YES -co COMPRESS=LZW -co PREDICTOR=2 -t_srs "+proj=merc +ellps=sphere +R=6378137 +a=6378137 +units=m" -r bilinear -tr 5000 5000 raw.tif warp-5000.tif
+    gdalwarp -co BIGTIFF=YES -co TILED=YES -co COMPRESS=LZW -co PREDICTOR=2 -t_srs "+proj=merc +ellps=sphere +R=6378137 +a=6378137 +units=m" -r bilinear -tr 500 500 raw.tif warp-500.tif
+    gdalwarp -co BIGTIFF=YES -co TILED=YES -co COMPRESS=LZW -co PREDICTOR=2 -t_srs "+proj=merc +ellps=sphere +R=6378137 +a=6378137 +units=m" -r bilinear -tr 700 700 raw.tif warp-700.tif
+    gdalwarp -co BIGTIFF=YES -co TILED=YES -co COMPRESS=LZW -co PREDICTOR=2 -t_srs "+proj=merc +ellps=sphere +R=6378137 +a=6378137 +units=m" -r bilinear -tr 90 90 raw.tif warp-90.tif
+
+    gdaldem color-relief -co COMPRESS=LZW -co PREDICTOR=2 -alpha warp-5000.tif /home/renderer/src/opentopomap/mapnik/relief_color_text_file.txt relief-5000.tif
+    gdaldem color-relief -co COMPRESS=LZW -co PREDICTOR=2 -alpha warp-500.tif /home/renderer/src/opentopomap/mapnik/relief_color_text_file.txt relief-500.tif
+
+    gdaldem hillshade -z 7 -compute_edges -co COMPRESS=JPEG warp-5000.tif hillshade-5000.tif
+    gdaldem hillshade -z 7 -compute_edges -co BIGTIFF=YES -co TILED=YES -co COMPRESS=JPEG warp-1000.tif hillshade-1000.tif
+    gdaldem hillshade -z 4 -compute_edges -co BIGTIFF=YES -co TILED=YES -co COMPRESS=JPEG warp-700.tif hillshade-700.tif
+    gdaldem hillshade -z 2 -co compress=lzw -co predictor=2 -co bigtiff=yes -compute_edges warp-90.tif hillshade-90.tif
+    gdal_translate -co compress=JPEG -co bigtiff=yes -co tiled=yes hillshade-90.tif hillshade-90-jpeg.tif
+
+    gdal_contour -a elev -i 10 warp-90.tif countours.gpkg
+    ogr2ogr -f "OSM" contours.osm contours.gpkg
+    osmconvert contours.osm -o=contours.pbf
+
+    service postgresql start
+    createdb contours
+    sudo -u postgres psql -d contours -c 'CREATE EXTENSION postgis;'
+    sudo -u renderer osm2pgsql --slim -d contours -C 12000 --number-processes 10 --style /home/renderer/src/opentopomap/mapnik/osm2pgsql/contours.style contours.pbf
+
+    cd /home/renderer/src/opentopomap/mapnik/tools
+    cc -o saddledirection saddledirection.c -lm -lgdal
+    cc -Wall -o isolation isolation.c -lgdal -lm -O2
+    psql gis < arealabel.sql
+    ./home/renderer/src/opentopomap/mapnik/tools/update_lowzoom.sh
+
+    sed -i "s|demfile='mapnik/dem/dem-srtm.tiff'|demfile='/data/srtm/data/raw.tif'|" update_isolations.sh
+    ./home/renderer/src/opentopomap/mapnik/tools/update_isolations.sh
+
+    psql gis < stationdirection.sql
+    psql gis < viewpointdirection.sql
+    psql gis < pitchicon.sql
 fi
 
 if [ "$1" == "run" ]; then
