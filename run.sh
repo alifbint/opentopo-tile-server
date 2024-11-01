@@ -130,7 +130,7 @@ if [ "$1" == "import" ]; then
 fi
 
 if [ "$1" == "build-topo" ]; then
-    if [ -d "/data/water-polygon" ] && [ "$(ls -A "/data/water-polygon")" ]; then
+    if [ -d "/data/water-polygon" ] && [ -z "$(ls -A "/data/water-polygon")" ]; then
         # Downloading water polygons
         cd /data/water-polygon
         wget https://osmdata.openstreetmap.de/download/simplified-water-polygons-split-3857.zip
