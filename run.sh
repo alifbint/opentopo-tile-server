@@ -141,7 +141,7 @@ if [ "$1" == "build-topo" ]; then
         rm water-polygons-split-3857.zip
     fi
 
-    if [ -d "/data/srtm/unpacked" ] || [ -z "$(ls -A "/data/srtm/unpacked")" ]; then
+    if [ ! -d "/data/srtm/unpacked" ] || [ -z "$(ls -A "/data/srtm/unpacked")" ]; then
         # Download DEM File
         cd /data/srtm
         wget -i srtm.list
