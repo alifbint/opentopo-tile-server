@@ -130,12 +130,16 @@ if [ "$1" == "import" ]; then
 fi
 
 if [ "$1" == "build-topo" ]; then
-    # Downloading water polygons
-    wget -o /data/water-polygon/simplified-water-polygons-split-3857.zip https://osmdata.openstreetmap.de/download/simplified-water-polygons-split-3857.zip
-    wget -o /data/water-polygon/water-polygons-split-3857.zip https://osmdata.openstreetmap.de/download/water-polygons-split-3857.zip
-    unzip /data/water-polygon/water-polygons-split-3857.zip -d /data/water-polygon
-    unzip /data/water-polygon/simplified-water-polygons-split-3857.zip -d /data/water-polygon
-    rm /data/water-polygon/simplified-water-polygons-split-3857.zip
+    if [ -d "/data/water-polygon" ] && [ "$(ls -A "/data/water-polygon")" ]; then
+        # Downloading water polygons
+        cd /data/water-polygon
+        wget https://osmdata.openstreetmap.de/download/simplified-water-polygons-split-3857.zip
+        wget https://osmdata.openstreetmap.de/download/water-polygons-split-3857.zip
+        unzip simplified-water-polygons-split-3857.zip
+        unzip water-polygons-split-3857.zip
+        rm simplified-water-polygons-split-3857.zip
+        rm water-polygons-split-3857.zip
+    fi
 
     # Download DEM File
     cd /data/srtm
