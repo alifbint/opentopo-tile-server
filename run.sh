@@ -149,7 +149,7 @@ if [ "$1" == "build-topo" ]; then
     # Extract SRTM
     cd /data/srtm/unpacked
     for hgtfile in *.hgt;do gdal_fillnodata.py $hgtfile $hgtfile.tif; done
-    mkdir /data/srtm/data
+    mkdir -p /data/srtm/data/
     gdal_merge.py -n 32767 -co BIGTIFF=YES -co TILED=YES -co COMPRESS=LZW -co PREDICTOR=2 -o /data/srtm/data/raw.tif *.hgt.tif
 
     cd /data/srtm/data
