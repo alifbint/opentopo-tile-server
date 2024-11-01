@@ -172,7 +172,7 @@ if [ "$1" == "build-topo" ]; then
     gdal_translate -co compress=JPEG -co bigtiff=yes -co tiled=yes hillshade-90.tif hillshade-90-jpeg.tif
 
     gdal_contour -a elev -i 10 warp-90.tif countours.gpkg
-    ogr2ogr -f "OSM" contours.osm contours.gpkg
+    ogr2ogr -f 'OSM' contours.osm contours.gpkg
     osmconvert contours.osm -o=contours.pbf
 
     service postgresql start
@@ -183,6 +183,7 @@ if [ "$1" == "build-topo" ]; then
     cd /home/renderer/src/opentopomap/mapnik/tools
     cc -o saddledirection saddledirection.c -lm -lgdal
     cc -Wall -o isolation isolation.c -lgdal -lm -O2
+
     psql gis < arealabel.sql
     ./home/renderer/src/opentopomap/mapnik/tools/update_lowzoom.sh
 
@@ -192,6 +193,10 @@ if [ "$1" == "build-topo" ]; then
     psql gis < stationdirection.sql
     psql gis < viewpointdirection.sql
     psql gis < pitchicon.sql
+
+    service postgresql stop
+
+    exit 0
 fi
 
 if [ "$1" == "run" ]; then
