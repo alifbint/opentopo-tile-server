@@ -141,14 +141,17 @@ if [ "$1" == "build-topo" ]; then
         rm water-polygons-split-3857.zip
     fi
 
-    # Download DEM File
-    cd /data/srtm
-    wget -i srtm.list
-    for zipfile in *.zip;do unzip -j -o "$zipfile" -d unpacked; done
+    if [ -d "/data/srtm/unpacked" ] || [ -z "$(ls -A "/data/srtm/unpacked")" ]; then
+        # Download DEM File
+        cd /data/srtm
+        wget -i srtm.list
+        for zipfile in *.zip;do unzip -j -o "$zipfile" -d unpacked; done
 
-    # Extract SRTM
-    cd /data/srtm/unpacked
-    for hgtfile in *.hgt;do gdal_fillnodata.py $hgtfile $hgtfile.tif; done
+        # Extract SRTM
+        cd /data/srtm/unpacked
+        for hgtfile in *.hgt;do gdal_fillnodata.py $hgtfile $hgtfile.tif; done
+    fi
+
     mkdir -p /data/srtm/data/
     gdal_merge.py -n 32767 -co BIGTIFF=YES -co TILED=YES -co COMPRESS=LZW -co PREDICTOR=2 -o /data/srtm/data/raw.tif *.hgt.tif
 
